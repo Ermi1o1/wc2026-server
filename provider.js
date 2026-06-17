@@ -16,6 +16,9 @@
 const KEY = process.env.APIFOOTBALL_KEY || "";
 const BASE = "https://v3.football.api-sports.io";
 
+// football-data.org takes priority when its key is set (free WC coverage)
+import { fetchLiveSnapshotFD, fetchStandingsFD, fdReady } from "./provider_fd.js";
+
 // 2026 World Cup league id in API-Football is 1 (World Cup). Season = 2026.
 const LEAGUE = process.env.APIFOOTBALL_LEAGUE || "1";
 const SEASON = process.env.APIFOOTBALL_SEASON || "2026";
@@ -103,6 +106,10 @@ function mapFixture(f) {
 
 /* Public: fetch a full snapshot (live + today's fixtures) */
 export async function fetchLiveSnapshot() {
+  if (fdReady()) {
+    try { return await fetchLiveSnapshotFD(); }
+    catch (e) { console.warn("football-data failed, falling back:", e.message); }
+  }
   if (!KEY) return simulate();   // zero-config fallback
   // live fixtures (with events + stats)
   const live = await api(`/fixtures?live=all&league=${LEAGUE}&season=${SEASON}`);
@@ -113,6 +120,10 @@ export async function fetchLiveSnapshot() {
 }
 
 export async function fetchStandings() {
+  if (fdReady()) {
+    try { return await fetchStandingsFD(); }
+    catch (e) { console.warn("football-data standings failed:", e.message); }
+  }
   if (!KEY) return simulate().standings;
   const res = await api(`/standings?league=${LEAGUE}&season=${SEASON}`);
   const out = {};
@@ -136,21 +147,43 @@ function simulate() {
       { id:"m1", group:"I", status:"LIVE", minute:67, home:"France", away:"Senegal", hs:2, as:1,
         homeFlag:"🇫🇷", awayFlag:"🇸🇳", stadium:"MetLife Stadium", city:"New York/New Jersey",
         stats:{poss:[58,42],shots:[11,6],sot:[5,3],xg:[1.9,0.8],fouls:[7,10],corners:[5,3],cards:[1,2]},
-        events:[{m:12,type:"goal",team:"home",who:"Mbappé"},{m:45,type:"goal",team:"away",who:"Sarr"},
-                {m:58,type:"goal",team:"home",who:"Dembélé"}] },
+        events:[{m:12,type:"goal",team:"home",who:"Mbappé",note:"right-foot finish"},
+                {m:34,type:"yellow",team:"away",who:"Koulibaly"},
+                {m:45,type:"goal",team:"away",who:"Sarr",note:"header"},
+                {m:58,type:"goal",team:"home",who:"Dembélé",note:"counter-attack"}] },
       { id:"m2", group:"L", status:"LIVE", minute:23, home:"England", away:"Croatia", hs:0, as:0,
         homeFlag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", awayFlag:"🇭🇷", stadium:"AT&T Stadium", city:"Dallas",
         stats:{poss:[61,39],shots:[7,2],sot:[2,0],xg:[0.6,0.1],fouls:[4,6],corners:[4,1],cards:[0,1]},
         events:[{m:18,type:"yellow",team:"away",who:"Modrić"}] },
+      { id:"m3", group:"A", status:"HALF TIME", minute:45, home:"Mexico", away:"South Korea", hs:1, as:1,
+        homeFlag:"🇲🇽", awayFlag:"🇰🇷", stadium:"Estadio Azteca", city:"Mexico City",
+        stats:{poss:[49,51],shots:[6,7],sot:[3,3],xg:[1.1,1.2],fouls:[8,5],corners:[2,4],cards:[1,0]},
+        events:[{m:21,type:"goal",team:"away",who:"Son",note:"penalty"},
+                {m:39,type:"goal",team:"home",who:"Giménez",note:"close range"}] },
       { id:"m4", group:"G", status:"UPCOMING", kickoff:Date.now()+1000*60*42, home:"Belgium", away:"Egypt",
         hs:null, as:null, homeFlag:"🇧🇪", awayFlag:"🇪🇬", stadium:"Mercedes-Benz Stadium", city:"Atlanta" },
+      { id:"m5", group:"D", status:"UPCOMING", kickoff:Date.now()+1000*60*60*3, home:"USA", away:"Australia",
+        hs:null, as:null, homeFlag:"🇺🇸", awayFlag:"🇦🇺", stadium:"SoFi Stadium", city:"Los Angeles" },
+      { id:"m6", group:"I", status:"FINISHED", minute:90, home:"Norway", away:"Iraq", hs:3, as:1,
+        homeFlag:"🇳🇴", awayFlag:"🇮🇶", stadium:"BMO Field", city:"Toronto",
+        stats:{poss:[55,45],shots:[14,8],sot:[7,3],xg:[2.7,1.0],fouls:[9,12],corners:[8,2],cards:[2,3]},
+        events:[{m:9,type:"goal",team:"home",who:"Haaland"},{m:31,type:"goal",team:"home",who:"Haaland"},
+                {m:55,type:"goal",team:"away",who:"Aymen"},{m:78,type:"goal",team:"home",who:"Ødegaard"}] },
     ],
     standings: {
+      A:[{team:"Mexico",p:1,w:0,d:1,l:0,gf:1,ga:1,pts:1},{team:"South Korea",p:1,w:0,d:1,l:0,gf:1,ga:1,pts:1},
+         {team:"Czechia",p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0},{team:"South Africa",p:1,w:0,d:0,l:1,gf:0,ga:2,pts:0}],
       I:[{team:"France",p:1,w:1,d:0,l:0,gf:3,ga:1,pts:3},{team:"Norway",p:1,w:1,d:0,l:0,gf:3,ga:1,pts:3},
          {team:"Senegal",p:1,w:0,d:0,l:1,gf:1,ga:2,pts:0},{team:"Iraq",p:1,w:0,d:0,l:1,gf:1,ga:3,pts:0}],
       L:[{team:"England",p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0},{team:"Croatia",p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0},
          {team:"Ghana",p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0},{team:"Panama",p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0}],
     },
+    bracket: [
+      { round:"Round of 16", a:"Argentina", b:"Norway", as:null, bs:null },
+      { round:"Round of 16", a:"France", b:"Mexico", as:null, bs:null },
+      { round:"Quarterfinal", a:"Brazil", b:"England", as:null, bs:null },
+      { round:"Quarterfinal", a:"Spain", b:"Portugal", as:null, bs:null },
+    ],
   };
   // advance the simulation a little each call
   SIM.matches.forEach((m) => {
@@ -166,5 +199,5 @@ function simulate() {
     }
   });
   return { matches: structuredClone(SIM.matches), standings: structuredClone(SIM.standings),
-           source:"simulator", at: Date.now() };
+           bracket: structuredClone(SIM.bracket), source:"simulator", at: Date.now() };
 }

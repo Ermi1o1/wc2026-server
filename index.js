@@ -17,10 +17,11 @@ import cors from "cors";
 import { WebSocketServer } from "ws";
 import http from "http";
 import { fetchLiveSnapshot, fetchStandings } from "./provider.js";
+import { fetchNews, fetchViral } from "./news.js";
 import { initFCM, sendPush, deadTokens, fcmReady } from "./fcm.js";
 
 const PORT = process.env.PORT || 4000;
-const POLL_MS = Number(process.env.POLL_MS || 60000);
+const POLL_MS = Number(process.env.POLL_MS || 60000); // 60s — fine for football-data.org (10 req/min)
 
 const app = express();
 app.use(cors());
@@ -30,7 +31,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/live" });
 
 /* ---------------- in-memory state (swap for Postgres + Redis in prod) -------- */
-let snapshot = { matches: [], standings: {}, source: "init", at: 0 };
+let snapshot = { matches: [], standings: {}, news: [], viral: [], source: "init", at: 0 };
 let prevById = new Map();
 // follows: Map<userId, Set<"team:France" | "match:123" | "player:Mbappé">>
 const follows = new Map();
@@ -117,12 +118,13 @@ async function poll() {
   try {
     const live = await fetchLiveSnapshot();
     const standings = await fetchStandings();
-    const next = { ...live, standings };
+    const [news, viral] = await Promise.all([fetchNews(), fetchViral()]);
+    const next = { ...live, standings, news, viral };
     diffAndNotify(next);
     snapshot = next;
     prevById = new Map(next.matches.map((m) => [m.id, m]));
     broadcast({ type:"snapshot", data: snapshot });
-    console.log(`↻ polled (${snapshot.source}) — ${snapshot.matches.length} matches @ ${new Date().toLocaleTimeString()}`);
+    console.log(`↻ polled (${snapshot.source}) — ${snapshot.matches.length} matches, ${news.length} news, ${viral.length} viral @ ${new Date().toLocaleTimeString()}`);
   } catch (e) {
     console.error("poll error:", e.message);
   }
@@ -145,6 +147,8 @@ app.get("/api/matches/:id", (req, res) => {
 });
 
 app.get("/api/standings", (_req, res) => res.json(snapshot.standings));
+app.get("/api/news", (_req, res) => res.json(snapshot.news));
+app.get("/api/viral", (_req, res) => res.json(snapshot.viral));
 
 app.get("/api/follows", (req, res) => {
   res.json([...(follows.get(demoUser()) || [])]);
@@ -176,7 +180,7 @@ await initFCM();
 server.listen(PORT, () => {
   console.log(`\n⚽ WC2026 backend on http://localhost:${PORT}`);
   console.log(`   WebSocket:  ws://localhost:${PORT}/live`);
-  console.log(`   Data source: ${process.env.APIFOOTBALL_KEY ? "API-Football" : "SIMULATOR (set APIFOOTBALL_KEY for live data)"}`);
+  console.log(`   Data source: ${process.env.FOOTBALLDATA_KEY ? "football-data.org (live)" : process.env.APIFOOTBALL_KEY ? "API-Football" : "SIMULATOR (set FOOTBALLDATA_KEY for free live World Cup data)"}`);
   console.log(`   Polling every ${POLL_MS/1000}s\n`);
   poll();
   setInterval(poll, POLL_MS);
